@@ -61,6 +61,7 @@ app.use((req, res, next) => {
       if (origin) res.setHeader('Vary', 'Origin');
       return res.sendStatus(204);
     } else {
+      console.log('CORS not allowed. Origin: ', origin);
       return res.status(403).send('CORS not allowed');
     }
   }
