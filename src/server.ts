@@ -206,7 +206,7 @@ function requireApiKey(req: express.Request, res: express.Response, next: expres
 
 function isSqlAllowed(sql: string) {
   if (!sql) return false;
-  const MAX_SQL_LENGTH = 20_000;
+  const MAX_SQL_LENGTH = 20000;
   if (sql.length > MAX_SQL_LENGTH) return false;
 
   const denied = /\b(?:DROP|ALTER|SHUTDOWN|KILL|CREATE\s+USER|CREATE\s+ROLE|GRANT|REVOKE)\b/i;
