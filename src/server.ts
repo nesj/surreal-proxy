@@ -204,16 +204,16 @@ function requireApiKey(req: express.Request, res: express.Response, next: expres
   }
 }
 
-function isSqlAllowed(sql: string) {
-  if (!sql) return false;
-  const MAX_SQL_LENGTH = 20000;
-  if (sql.length > MAX_SQL_LENGTH) return false;
+// function isSqlAllowed(sql: string) {
+//   if (!sql) return false;
+//   const MAX_SQL_LENGTH = 20000;
+//   if (sql.length > MAX_SQL_LENGTH) return false;
 
-  const denied = /\b(?:DROP|ALTER|SHUTDOWN|KILL|CREATE\s+USER|CREATE\s+ROLE|GRANT|REVOKE)\b/i;
-  if (denied.test(sql)) return false;
+//   const denied = /\b(?:DROP|ALTER|SHUTDOWN|KILL|CREATE\s+USER|CREATE\s+ROLE|GRANT|REVOKE)\b/i;
+//   if (denied.test(sql)) return false;
 
-  return true;
-}
+//   return true;
+// }
 
 app.post(
   '/api/sql',
@@ -228,9 +228,9 @@ app.post(
         return res.status(400).json({ error: 'Missing SQL in request body (send raw text or JSON { sql } )' });
       }
 
-      if (!isSqlAllowed(rawSql)) {
-        return res.status(422).json({ error: 'SQL contains forbidden operations or is too long' });
-      }
+      // if (!isSqlAllowed(rawSql)) {
+      //   return res.status(422).json({ error: 'SQL contains forbidden operations or is too long' });
+      // }
 
       const useNs = SURREAL_NS || 'myapp';
       const useDb = SURREAL_DB || 'prod';
