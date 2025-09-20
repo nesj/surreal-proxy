@@ -5,6 +5,8 @@ import * as dotenv from 'dotenv';
 import net from 'net';
 import dns from 'dns';
 import helmet from 'helmet';
+import * as http from 'http';
+import * as https from 'https';
 
 dotenv.config();
 
@@ -59,6 +61,7 @@ app.use((req, res, next) => {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, NS, DB, X-API-KEY');
       if (origin) res.setHeader('Access-Control-Allow-Credentials', 'true');
       if (origin) res.setHeader('Vary', 'Origin');
+      res.setHeader('Connection', 'keep-alive');
       return res.sendStatus(204);
     } else {
       console.log('CORS not allowed. Origin: ', origin);
@@ -75,6 +78,8 @@ function buildSurrealHeaders() {
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'text/plain',
+    'Connection': 'keep-alive',
+    'Accept-Encoding': 'gzip,deflate',
   };
   if (SURREAL_NS) headers['NS'] = SURREAL_NS;
   if (SURREAL_DB) headers['DB'] = SURREAL_DB;
@@ -204,16 +209,23 @@ function requireApiKey(req: express.Request, res: express.Response, next: expres
   }
 }
 
-// function isSqlAllowed(sql: string) {
-//   if (!sql) return false;
-//   const MAX_SQL_LENGTH = 20000;
-//   if (sql.length > MAX_SQL_LENGTH) return false;
+const outgoingAgents: Record<string, http.Agent | https.Agent> = {};
+function getOutgoingAgent(urlObj: URL) {
+  const port = urlObj.port ? urlObj.port : (urlObj.protocol === 'https:' ? '443' : '80');
+  const key = `${urlObj.protocol}//${urlObj.hostname}:${port}`;
+  if (outgoingAgents[key]) return outgoingAgents[key];
 
-//   const denied = /\b(?:DROP|ALTER|SHUTDOWN|KILL|CREATE\s+USER|CREATE\s+ROLE|GRANT|REVOKE)\b/i;
-//   if (denied.test(sql)) return false;
+  const agentOpts: http.AgentOptions = {
+    keepAlive: true,
+    keepAliveMsecs: 10_000,
+    maxSockets: 50,
+    maxFreeSockets: 10,
+  };
 
-//   return true;
-// }
+  const agent = urlObj.protocol === 'https:' ? new https.Agent(agentOpts) : new http.Agent(agentOpts);
+  outgoingAgents[key] = agent;
+  return agent;
+}
 
 app.post(
   '/api/sql',
@@ -227,10 +239,6 @@ app.post(
       if (!rawSql || typeof rawSql !== 'string') {
         return res.status(400).json({ error: 'Missing SQL in request body (send raw text or JSON { sql } )' });
       }
-
-      // if (!isSqlAllowed(rawSql)) {
-      //   return res.status(422).json({ error: 'SQL contains forbidden operations or is too long' });
-      // }
 
       const useNs = SURREAL_NS || 'myapp';
       const useDb = SURREAL_DB || 'prod';
@@ -264,14 +272,18 @@ app.post(
 
       const headers = buildSurrealHeaders();
 
+      const agent = getOutgoingAgent(urlObj);
+
       const axiosCfg: AxiosRequestConfig = {
         method: 'POST',
         url,
         headers,
         data: forwardedSql,
-        timeout: 30000,
+        timeout: 30_000,
         responseType: 'text',
         validateStatus: () => true,
+        httpAgent: agent as http.Agent,
+        httpsAgent: agent as https.Agent,
       };
 
       const sres = await axiosWithRetry(axiosCfg, 2, 500);
@@ -282,6 +294,7 @@ app.post(
 
       res.set('Access-Control-Allow-Origin', req.headers.origin || '*');
       if (req.headers.origin) res.set('Vary', 'Origin');
+      res.set('Connection', 'keep-alive');
 
       res.status(sres.status).send(parsed);
     } catch (err: any) {
@@ -292,6 +305,10 @@ app.post(
 );
 
 const port = Number(process.env.PORT || 3000);
-app.listen(port, () => {
+
+const server = app.listen(port, () => {
   console.log(`Surreal proxy listening on ${port}, proxying to ${SURREAL_URL}`);
 });
+
+server.keepAliveTimeout = 30000;
+server.headersTimeout = 31000;
